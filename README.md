@@ -7,12 +7,12 @@ A Rust-based Turing Machine interpreter inspired by the [Wikipedia article on Tu
 Ensure you have [Rust installed](https://www.rust-lang.org/tools/install), then execute the program with the following command:
 
 ```bash
-$ cargo run -- ./cards/beaver.card ./tapes/input-01.tape
+$ cargo run -- states/beaver.txt tapes/tape_01.txt
 ```
 
-## Cards File Format
+## State Table File Format
 
-The instructions for the Turing Machine are stored in **cards files** (examples can be found in the [./cards/](./cards/) directory). These files define the machine's behavior as follows:
+The instructions for the Turing Machine are stored in **states files** (examples can be found in the [./states/](./states/) directory). These files define the machine's behavior as follows:
 
 - Each instruction occupies a single line.
 - The format of an instruction is:  
@@ -27,11 +27,10 @@ The instructions for the Turing Machine are stored in **cards files** (examples 
 ### Additional Notes:
 - Leading and trailing whitespace is ignored.
 - Empty lines are ignored.
-- Lines starting with `#` are treated as comments and ignored.
 
 ## Tape File Format
 
-The initial state of the Turing Machine's tape is specified in **tape files** (examples available in the [./tapes/](./tapes/) directory).
+The initial state of the Turing Machine's tape is specified in **tapes files** (examples available in the [./tapes/](./tapes/) directory).
 
 - A tape file consists of symbols separated by whitespace.
 - Each symbol represents a cell's initial value on the tape.
@@ -41,7 +40,7 @@ The initial state of the Turing Machine's tape is specified in **tape files** (e
 1. **Initialization**:
    - Load the specified tape file to initialize the tape.
    - Place the machine's head at the center of the tape.
-   - Set the initial state to the first state in the provided cards file.
+   - Set the initial state "A".
 
 2. **Execution**:
    - On each step, the machine:
@@ -55,5 +54,5 @@ The initial state of the Turing Machine's tape is specified in **tape files** (e
   - Inserts a `0` at the front if the head moves before the start of the tape.
   - Appends a `0` at the end if the head moves beyond the tape's current length.
 - Infinite loops may occur if no halt state is defined or reachable.
-
-This interpreter provides a robust platform to simulate Turing Machine behavior, making it a great tool for understanding computational theory.
+- The halt state is always "HALT"
+- The initial state is always "A"

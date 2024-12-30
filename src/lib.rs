@@ -1,71 +1,137 @@
-use std::{fs, error, path::Path};
+pub type Error = Box<dyn std::error::Error>;
+pub type Result<T> = std::result::Result<T, Error>;
 
-type Error = Box<dyn error::Error>;
-
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq)]
 enum Step {
     Left,
     Right,
 }
 
-type Symbol = String;
-type State = String;
-
-pub struct Args {
-    cards_file_path: String,
-    tape_file_path: String,
+#[derive(Debug)]
+pub struct Instruction {
+    current: String,
+    read: char,
+    write: char,
+    step: Step,
+    next: String,  
 }
 
-impl Args {
-    pub fn build<T: Iterator<Item = String>>(mut args: T) -> Result<Args, Error> {
-        args.next();
-
-        let cards_file_path = match args.next() {
-            Some(arg) => arg,
-            None => return Err("Did not provide cards path".into()),
+impl Instruction {
+    pub fn from_str(s: &str) -> Result<Instruction> {
+        let mut s_iter = s.split_whitespace();
+        
+        let current = match s_iter.next() {
+            Some(val) => val.to_string(),
+            None => return Err("did not provide current state".into()),
         };
 
-        let tape_file_path = match args.next() {
-            Some(arg) => arg,
-            None => return Err("Did not provide tape path".into()),
+        let read = match s_iter.next() {
+            Some(val) => match val.chars().nth(0) {
+                Some(ch) => ch,
+                None => unreachable!(),
+            },
+            None => return Err("did not provide read char".into()),
         };
 
-        Ok(Args {
-            cards_file_path,
-            tape_file_path,
+        let write = match s_iter.next() {
+            Some(val) => match val.chars().nth(0) {
+                Some(ch) => ch,
+                None => unreachable!(),
+            },
+            None => return Err("did not provide write char".into()),
+        };
+
+        let step = match s_iter.next() {
+            Some(val) => match val {
+                "L" => Step::Left,
+                "R" => Step::Right,
+                _ => return Err("step is expected to be L or R".into()),
+            },
+            None => return Err("did not provide direction".into()),
+        };
+
+        let next = match s_iter.next() {
+            Some(val) => val.to_string(),
+            None => return Err("did not provide next state".into()),
+        };
+
+        Ok(Instruction {
+            current,
+            read,
+            write,
+            step,
+            next,
         })
     }
 }
 
 #[derive(Debug)]
 pub struct Machine {
-    tape: Vec<Symbol>,
+    tape: Vec<char>,
     head: usize,
-    cards: Vec<Card>,
-    state: State,
+    state_table: Vec<Instruction>,
+    state: String,
+}
+
+impl Default for Machine {
+    fn default() -> Self {
+        Machine {
+            tape: vec!['0'; 20],
+            head: 0,
+            state_table: vec![],
+            state: String::from("A"),
+        }
+    } 
 }
 
 impl Machine {
-    pub fn build(args: &Args) -> Result<Machine, Error> {
-        let tape = read_tape(&Path::new(&args.tape_file_path))?;
-        let head = tape.len() / 2;
-        let cards = read_cards(&Path::new(&args.cards_file_path))?;
-        let state = match cards.iter().nth(0) {
-            Some(card) => card.current.clone(),
-            None => return Err("Could not retrieve initial state".into()),
-        };
+    pub fn with_tape(&mut self, tape: Vec<char>) {
+        self.tape = tape;
+    }
 
-        Ok(Machine {
-            tape,
-            head,
-            cards,
-            state,
-        })
+    pub fn with_head(&mut self, head: usize) {
+        self.head = head;
+    }
+
+    pub fn with_state_table(&mut self, state_table: Vec<Instruction>) {
+        self.state_table = state_table;
+    }
+
+    pub fn with_state(&mut self, state: String) {
+        self.state = state;
+    }
+}
+
+impl Machine {
+    pub fn next(&mut self) -> Option<()> {
+        if self.state == "HALT" {
+            return None;
+        }
+        
+        let instruction = get_instruction(&self.state_table, &self.state, self.tape[self.head])?;
+        
+        if instruction.step == Step::Left && self.head == 0 {
+            self.tape.insert(0, '0');
+            self.head += 1;
+        }
+
+        if instruction.step == Step::Right && self.head == self.tape.len() - 1 {
+            self.tape.push('0');
+        }
+        
+        self.tape[self.head] = instruction.write.clone();
+        self.state = instruction.next.clone();
+        self.head = match instruction.step {
+            Step::Left => self.head - 1,
+            Step::Right => self.head + 1,
+        };
+                
+        Some(())
     }
 
     pub fn summary(&self) {
-        for item in &self.tape {
-            print!("{item}  ");
+        for sym in &self.tape {
+            print!("{}  ", sym);
         }
         println!();
         for _ in 0..self.head {
@@ -73,125 +139,14 @@ impl Machine {
         }
         println!("^");
     }
+}
 
-    fn get_card(&mut self) -> Option<Card> {
-        for card in &self.cards {
-            if card.current == self.state && card.read == self.tape[self.head] {
-                return Some(card.clone());
-            }
+fn get_instruction<'a>(state_table: &'a Vec<Instruction>, state: &str, read: char) -> Option<&'a Instruction> {
+    for ins in state_table {
+        if ins.current == state && ins.read == read {
+            return Some(ins);
         }
-
-        None
     }
 
-    pub fn next(&mut self) -> Option<usize> {
-        if self.state == "HALT" {
-            return None;
-        }
-        
-        if self.head == 0 {
-            self.tape.insert(0, "0".to_string());
-            self.head += 1;
-        }
-
-        if self.head == self.tape.len() - 1 {
-            self.tape.push("0".to_string());
-        }
-
-        let card = match self.get_card() {
-            Some(card) => card,
-            None => return None,
-        };
-        
-        self.tape[self.head] = card.write.clone();
-        self.state = card.next.clone();
-        self.head = match card.step {
-            Step::Left => self.head - 1,
-            Step::Right => self.head + 1,
-        };
-                
-        Some(self.head)
-    }
-}
-
-fn read_tape<P: AsRef<Path>>(path: P) -> Result<Vec<String>, Error> {
-    let contents = fs::read_to_string(path)?;
-    
-    let result = contents
-        .trim()
-        .split_whitespace()
-        .map(|x| x.to_string())
-        .collect::<Vec<_>>();
-
-    Ok(result)
-}
-
-fn read_cards<P: AsRef<Path>>(path: P) -> Result<Vec<Card>, Error> {
-    let contents = fs::read_to_string(path)?;
-    
-    let result = contents
-        .lines()
-        .map(|line| line
-            .trim()
-            .split_whitespace()
-            .collect::<Vec<_>>())
-        .filter(|item| item.len() > 0)
-        .map(|item| Card::build(&item))
-        .collect::<Result<Vec<_>, _>>();
-
-    Ok(result?)
-}
-
-#[derive(Debug, Clone)]
-struct Card {
-    current: State,
-    read: String,
-    write: String,
-    step: Step,
-    next: State,  
-}
-
-impl Card {
-    fn build(tokens: &[&str]) -> Result<Card, Error> {
-        let mut tokens_iter = tokens.iter();
-
-        let current = match tokens_iter.next() {
-            Some(&token) => token,
-            None => return Err("did not provide current state token".into()),
-        };
-
-        let read = match tokens_iter.next() {
-            Some(&token) => token,
-            None => return Err("did not provide read token".into()),
-        };
-
-        let write = match tokens_iter.next() {
-            Some(&token) => token,
-            None => return Err("did not provide write token".into()),
-        };
-
-        let step = match tokens_iter.next() {
-            Some(&token) => token,
-            None => return Err("did not provide step token".into()),
-        };
-
-        let next = match tokens_iter.next() {
-            Some(&token) => token,
-            None => return Err("did not provide next state token".into()),
-        };
-
-        let step = match step {
-            "L" => Step::Left,
-            "R" => Step::Right,
-            _ => return Err("Step is expected to be L or R".into()),
-        };
-
-        Ok(Card {
-            current: current.to_string(),
-            read: read.to_string(),
-            write: write.to_string(),
-            step,
-            next: next.to_string(),
-        })
-    }
+    None
 }
